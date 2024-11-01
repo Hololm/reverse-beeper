@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Instagram Messaging Interface</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        #loginForm, #messageForm, #receivedMessages, #conversations { margin-top: 20px; }
+        input, button { margin: 5px 0; padding: 5px; }
+        #status, #messageStatus { margin-top: 10px; }
+        #receivedMessages, #conversations { border: 1px solid #ccc; padding: 10px; max-height: 300px; overflow-y: auto; }
+    </style>
+</head>
+<body>
+    <h1>Instagram Messaging Interface</h1>
+
+    <div id="loginForm">
+        <h2>Login to Instagram</h2>
+        <input type="text" id="username" placeholder="Username" required>
+        <input type="password" id="password" placeholder="Password" required>
+        <button onclick="login()">Login</button>
+    </div>
+    <p id="loginStatus"></p>
+
+    <div id="messageForm" style="display: none;">
+        <h2>Send Message</h2>
+        <input type="text" id="userId" placeholder="User ID" required>
+        <input type="text" id="message" placeholder="Message" required>
+        <button onclick="sendMessage()">Send</button>
+    </div>
+    <p id="messageStatus"></p>
+
+    <div id="conversations" style="display: none;">
+        <h2>Conversations</h2>
+        <button onclick="getConversations()">Refresh Conversations</button>
+        <ul id="conversationList"></ul>
+    </div>
+
+    <script>
+        const socket = io();
+
+        function login() {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+
+            fetch('/login', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ username, password }),
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    document.getElementById('loginStatus').textContent = `Logged in as ${data.user}`;
+                    document.getElementById('loginForm').style.display = 'none';
+                    document.getElementById('messageForm').style.display = 'block';
+                    document.getElementById('conversations').style.display = 'block';
+                    getConversations();
+                } else {
+                    document.getElementById('loginStatus').textContent = `Login failed: ${data.error}`;
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                document.getElementById('loginStatus').textContent = 'Login failed: ' + error;
+            });
+        }
+
+        function sendMessage() {
+            const userId = document.getElementById('userId').value;
+            const message = document.getElementById('message').value;
+            if (userId && message) {
+                socket.emit('sendMessage', { userId, message });
+            } else {
+                document.getElementById('messageStatus').textContent = 'Please enter both user ID and message.';
+            }
+        }
+
+        function getConversations() {
+            socket.emit('getConversations');
+        }
+
+        socket.on('messageSent', (result) => {
+            document.getElementById('messageStatus').textContent = result.message;
+        });
+
+        socket.on('conversationsReceived', (result) => {
+            if (result.success) {
+                const conversationList = document.getElementById('conversationList');
+                conversationList.innerHTML = '';
+                result.conversations.forEach(conv => {
+                    const li = document.createElement('li');
+                    li.textContent = `${conv.users.join(', ')}: ${conv.lastMessage}`;
+                    conversationList.appendChild(li);
+                });
+            } else {
+                console.error('Failed to fetch conversations:', result.message);
+            }
+        });
+    </script>
+</body>
+</html>

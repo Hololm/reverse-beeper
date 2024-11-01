@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WhatsApp Web Interface</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        #qrcode img { max-width: 100%; }
+        #messageForm, #receivedMessages { margin-top: 20px; }
+        input, button { margin: 5px 0; padding: 5px; }
+        #status, #messageStatus { margin-top: 10px; }
+        #receivedMessages { border: 1px solid #ccc; padding: 10px; max-height: 300px; overflow-y: auto; }
+    </style>
+</head>
+<body>
+    <h1>WhatsApp Web Interface</h1>
+    <div id="qrcode"></div>
+    <p id="status"></p>
+
+    <div id="messageForm" style="display: none;">
+        <h2>Send Message</h2>
+        <input type="text" id="phoneNumber" placeholder="Phone Number (with country code)" required>
+        <input type="text" id="message" placeholder="Message" required>
+        <button onclick="sendMessage()">Send</button>
+    </div>
+    <p id="messageStatus"></p>
+
+    <div id="receivedMessages">
+        <h2>Received Messages</h2>
+        <ul id="messageList"></ul>
+    </div>
+
+    <script>
+        const socket = io();
+
+        socket.on('qr', (qrCodeDataUrl) => {
+            const qrCodeImg = document.createElement('img');
+            qrCodeImg.src = qrCodeDataUrl;
+            document.getElementById('qrcode').innerHTML = '';
+            document.getElementById('qrcode').appendChild(qrCodeImg);
+            document.getElementById('status').textContent = 'Scan this QR code with WhatsApp';
+        });
+
+        socket.on('ready', (message) => {
+            document.getElementById('qrcode').style.display = 'none';
+            document.getElementById('status').textContent = message;
+            document.getElementById('messageForm').style.display = 'block';
+        });
+
+        socket.on('messageSent', (result) => {
+            document.getElementById('messageStatus').textContent = result.message;
+        });
+
+        socket.on('messageReceived', (message) => {
+            const li = document.createElement('li');
+            li.textContent = `From ${message.from}: ${message.body}`;
+            document.getElementById('messageList').appendChild(li);
+        });
+
+        function sendMessage() {
+            const number = document.getElementById('phoneNumber').value;
+            const message = document.getElementById('message').value;
+            if (number && message) {
+                socket.emit('sendMessage', { number, message });
+            } else {
+                document.getElementById('messageStatus').textContent = 'Please enter both phone number and message.';
+            }
+        }
+    </script>
+</body>
+</html>
