@@ -4,12 +4,13 @@ const socketIO = require('socket.io');
 const cors = require('cors');
 const { IgApiClient } = require('instagram-private-api');
 const { Client } = require('whatsapp-web.js');
+const session = require('express-session');
 const qrcode = require('qrcode');
 
 const app = express();
 const server = http.createServer(app);
 const io = socketIO(server, {
-  cors: { origin: "http://localhost:8080", methods: ["GET", "POST"] }
+    cors: { origin: "http://localhost:8080", methods: ["GET", "POST"] }
 });
 
 app.use(cors());
@@ -20,22 +21,53 @@ const waClient = new Client();
 
 let waLatestQR = null;
 
-// Instagram login
+app.use(session({
+    secret: 'your-secret-key',
+    resave: false,
+    saveUninitialized: false,
+    cookie: { secure: process.env.NODE_ENV === 'production' }
+}));
+
+// Modify Instagram login endpoint
 app.post('/login/instagram', async (req, res) => {
     const { username, password } = req.body;
+    if (!username || !password) {
+        return res.status(400).json({
+            success: false,
+            error: 'Username and password are required'
+        });
+    }
+
     try {
         igClient.state.generateDevice(username);
-        // Skip suggested searches flow
+        await igClient.simulate.preLoginFlow();
         const loggedInUser = await igClient.account.login(username, password);
-        // Skip post login suggested searches
+
+        // Test the connection by fetching inbox immediately
+        try {
+            const inbox = await igClient.feed.directInbox().items();
+            console.log('Successfully fetched inbox:', inbox.length, 'conversations');
+        } catch (inboxError) {
+            console.error('Failed to fetch inbox:', inboxError);
+        }
+
         res.json({ success: true, user: loggedInUser.username });
+        console.log('Logged into Instagram!');
     } catch (error) {
+        console.error('Instagram login error:', error);
         const errorMessage = error.response?.body?.message || error.message;
         res.status(400).json({
             success: false,
             error: errorMessage
         });
     }
+});
+
+app.get('/auth/status', (req, res) => {
+    res.json({
+        instagram: !!req.session.instagramUser,
+        whatsapp: !!waClient.info
+    });
 });
 
 // WhatsApp login (QR code generation)
@@ -55,66 +87,145 @@ io.on('connection', (socket) => {
         try {
             const thread = igClient.entity.directThread([data.userId.toString()]);
             await thread.broadcastText(data.message);
-            socket.emit('messageSent', { platform: 'instagram', success: true });
+            socket.emit('messageSent', {
+                platform: 'instagram',
+                success: true,
+                message: 'Message sent successfully'
+            });
         } catch (error) {
-            socket.emit('messageSent', { platform: 'instagram', success: false, error: error.message });
+            console.error('Error sending Instagram message:', error);
+            socket.emit('messageSent', {
+                platform: 'instagram',
+                success: false,
+                error: error.message
+            });
         }
     });
 
     // WhatsApp message sending
     socket.on('whatsapp:sendMessage', async (data) => {
         try {
-            const formattedNumber = data.number.includes('@c.us') ? data.number : `${data.number}@c.us`;
+            const formattedNumber = data.userId.includes('@c.us') ? data.userId : `${data.userId}@c.us`;
             await waClient.sendMessage(formattedNumber, data.message);
-            socket.emit('messageSent', { platform: 'whatsapp', success: true });
+            socket.emit('messageSent', {
+                platform: 'whatsapp',
+                success: true,
+                message: 'Message sent successfully'
+            });
         } catch (error) {
-            socket.emit('messageSent', { platform: 'whatsapp', success: false, error: error.message });
+            console.error('Error sending WhatsApp message:', error);
+            socket.emit('messageSent', {
+                platform: 'whatsapp',
+                success: false,
+                error: error.message
+            });
         }
     });
 
     // Fetch recent chats (combine Instagram and WhatsApp)
     socket.on('getRecentChats', async () => {
         try {
-            const igInbox = await igClient.feed.directInbox().items();
-            const igChats = igInbox.map(thread => ({
-                id: thread.thread_id,
-                platform: 'instagram',
-                users: thread.users.map(user => user.username),
-                lastMessage: thread.last_permanent_item.text,
-                timestamp: thread.last_permanent_item.timestamp
-            }));
+            let allChats = [];
 
-            // For WhatsApp, you'd need to implement a method to get recent chats
-            // This is a placeholder as WhatsApp Web API doesn't provide this directly
-            const waChats = []; // Implement WhatsApp recent chats fetching
+            // Fetch Instagram chats
+            if (igClient) {
+                try {
+                    const igFeed = igClient.feed.directInbox();
+                    const igInbox = await igFeed.items();
+                    console.log('Instagram chats fetched:', igInbox.length);
 
-            const allChats = [...igChats, ...waChats].sort((a, b) => b.timestamp - a.timestamp);
+                    const igChats = igInbox.map(thread => ({
+                        id: thread.thread_id,
+                        platform: 'instagram',
+                        users: thread.users.map(user => user.username),
+                        lastMessage: thread.last_permanent_item?.text || 'No message',
+                        timestamp: thread.last_permanent_item?.timestamp || Date.now()
+                    }));
+                    allChats = [...allChats, ...igChats];
+                } catch (igError) {
+                    console.error('Error fetching Instagram chats:', igError);
+                }
+            }
+
+            // Fetch WhatsApp chats
+            if (waClient.info) {
+                try {
+                    const waChats = await waClient.getChats();
+                    console.log('WhatsApp chats fetched:', waChats.length);
+
+                    const formattedWaChats = waChats.map(chat => ({
+                        id: chat.id._serialized,
+                        platform: 'whatsapp',
+                        users: [chat.name || chat.id.user],
+                        lastMessage: chat.lastMessage?.body || 'No message',
+                        timestamp: chat.lastMessage?.timestamp || Date.now()
+                    }));
+                    allChats = [...allChats, ...formattedWaChats];
+                } catch (waError) {
+                    console.error('Error fetching WhatsApp chats:', waError);
+                }
+            }
+
+            // Sort all chats by timestamp
+            allChats.sort((a, b) => b.timestamp - a.timestamp);
+            console.log('Total chats being sent:', allChats.length);
+
             socket.emit('recentChats', allChats);
         } catch (error) {
+            console.error('Error in getRecentChats:', error);
             socket.emit('error', { message: 'Failed to fetch recent chats' });
         }
     });
 
     // Fetch chat history
-    socket.on('getChatHistory', async (data) => {
-        try {
-            if (data.platform === 'instagram') {
-                const thread = igClient.entity.directThread([data.chatId]);
-                const messages = await thread.items();
-                socket.emit('chatHistory', { platform: 'instagram', messages });
-            } else if (data.platform === 'whatsapp') {
-                // Implement WhatsApp chat history fetching
-                // This will depend on how you store/retrieve WhatsApp messages
-            }
-        } catch (error) {
-            socket.emit('error', { message: 'Failed to fetch chat history' });
+// Fetch chat history
+socket.on('getChatHistory', async (data) => {
+    try {
+        if (data.platform === 'instagram') {
+            // Create a thread feed instead of using thread directly
+            const threadFeed = igClient.feed.directThread({ thread_id: data.chatId });
+            const items = await threadFeed.items();
+
+            const formattedMessages = items.map(msg => ({
+                id: msg.item_id,
+                text: msg.text || 'Media message',
+                timestamp: msg.timestamp,
+                fromMe: msg.user_id === igClient.state.cookieUserId
+            }));
+
+            socket.emit('chatHistory', {
+                platform: 'instagram',
+                messages: formattedMessages
+            });
+        } else if (data.platform === 'whatsapp') {
+            const chat = await waClient.getChatById(data.chatId);
+            const messages = await chat.fetchMessages();
+            const formattedMessages = messages.map(msg => ({
+                id: msg.id.id,
+                text: msg.body,
+                timestamp: msg.timestamp * 1000,
+                fromMe: msg.fromMe
+            }));
+            socket.emit('chatHistory', {
+                platform: 'whatsapp',
+                messages: formattedMessages
+            });
+        }
+    } catch (error) {
+        console.error('Error fetching chat history:', error);
+        socket.emit('error', { message: 'Failed to fetch chat history' });
         }
     });
 });
 
+// WhatsApp event handlers
 waClient.on('qr', async (qr) => {
-    waLatestQR = await qrcode.toDataURL(qr);
-    io.emit('whatsapp:qr', waLatestQR);
+    try {
+        waLatestQR = await qrcode.toDataURL(qr);
+        io.emit('whatsapp:qr', waLatestQR);
+    } catch (error) {
+        console.error('Error generating QR code:', error);
+    }
 });
 
 waClient.on('ready', () => {
@@ -122,12 +233,13 @@ waClient.on('ready', () => {
     io.emit('whatsapp:ready', 'WhatsApp is ready!');
 });
 
-waClient.on('message_create', (message) => {
+waClient.on('message', (message) => {
     if (message.fromMe) return;
     io.emit('messageReceived', {
         platform: 'whatsapp',
         from: message.from,
-        body: message.body
+        body: message.body,
+        timestamp: message.timestamp * 1000
     });
 });
 

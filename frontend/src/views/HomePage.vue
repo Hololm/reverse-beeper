@@ -51,7 +51,7 @@
 
 <script>
 import axios from 'axios';
-import {io} from 'socket.io-client';
+import { io } from 'socket.io-client';
 
 export default {
   name: 'HomePage',
@@ -68,9 +68,15 @@ export default {
     }
   },
   created() {
-    this.socket = io('http://localhost:3000');
-    this.setupSocketListeners();
-  },
+  // Clear existing auth state when landing on home page
+  localStorage.removeItem('instagramUser');
+  localStorage.removeItem('whatsappLoggedIn');
+  this.isInstagramLoggedIn = false;
+  this.isWhatsAppLoggedIn = false;
+
+  this.socket = io('http://localhost:3000');
+  this.setupSocketListeners();
+},
   methods: {
     setupSocketListeners() {
       this.socket.on('whatsapp:qr', (qr) => {
@@ -80,6 +86,12 @@ export default {
       this.socket.on('whatsapp:ready', () => {
         this.isWhatsAppLoggedIn = true;
         this.whatsappQR = null;
+        localStorage.setItem('whatsappLoggedIn', 'true');
+      });
+
+      this.socket.on('connect_error', (error) => {
+        console.error('Socket connection error:', error);
+        this.errorMessage = 'Connection error. Please try again.';
       });
     },
     async loginInstagram() {
@@ -94,18 +106,41 @@ export default {
         if (response.data.success) {
           this.isInstagramLoggedIn = true;
           localStorage.setItem('instagramUser', response.data.user);
+          // Don't automatically redirect - let user click "Enter Chat"
+        } else {
+          this.errorMessage = response.data.error || 'Login failed';
         }
       } catch (error) {
+        console.error('Login error:', error);
         this.errorMessage = error.response?.data?.error || 'Login failed';
       } finally {
         this.isLoading = false;
       }
     },
-    initiateWhatsAppLogin() {
-      this.socket.emit('whatsapp:requestQR');
+    async initiateWhatsAppLogin() {
+      try {
+        const response = await axios.get('http://localhost:3000/login/whatsapp');
+        if (response.data.qr) {
+          this.whatsappQR = response.data.qr;
+        }
+      } catch (error) {
+        console.error('WhatsApp QR error:', error);
+        this.errorMessage = 'Failed to get WhatsApp QR code';
+      }
     },
     goToChat() {
-      this.$router.push('/chat');
+  if (this.isInstagramLoggedIn || this.isWhatsAppLoggedIn) {
+    this.$router.push('/chat').catch(err => {
+      if (err.name !== 'NavigationDuplicated') {
+        throw err;
+      }
+    });
+  }
+}
+  },
+  beforeUnmount() {
+    if (this.socket) {
+      this.socket.disconnect();
     }
   }
 }
@@ -181,5 +216,13 @@ button:disabled {
 .enter-chat-btn {
   margin-top: 30px;
   background-color: #2c3e50;
+}
+
+button:hover {
+  opacity: 0.9;
+}
+
+button:disabled {
+  cursor: not-allowed;
 }
 </style>
