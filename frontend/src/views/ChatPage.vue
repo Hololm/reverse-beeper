@@ -104,7 +104,7 @@ export default {
 
     if (!instagramUser && !whatsappLoggedIn) {
       this.$router.push('/');
-      return;
+
     }
   },
   mounted() {
