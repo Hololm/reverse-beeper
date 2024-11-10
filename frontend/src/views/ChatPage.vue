@@ -8,11 +8,9 @@
           {{ isLoading ? 'Loading...' : 'Refresh' }}
         </button>
       </div>
-
       <div v-if="recentChats.length === 0" class="no-chats">
         No conversations found
       </div>
-
       <div v-else class="chat-items">
         <div
           v-for="chat in recentChats"
@@ -41,12 +39,10 @@
           <h3>{{ selectedChat.users.join(', ') }}</h3>
         </div>
       </div>
-
       <div class="messages" ref="messagesContainer">
         <div v-if="chatHistory.length === 0" class="no-messages">
           No messages yet
         </div>
-
         <div
           v-for="message in chatHistory"
           :key="message.id"
@@ -58,7 +54,6 @@
           </div>
         </div>
       </div>
-
       <div class="message-input">
         <input
           v-model="newMessage"
@@ -74,7 +69,6 @@
         </button>
       </div>
     </div>
-
     <div v-else class="no-chat-selected">
       Select a conversation to start messaging
     </div>
@@ -98,13 +92,9 @@ export default {
     }
   },
   created() {
-    // Check if user is logged in
-    const instagramUser = localStorage.getItem('instagramUser');
     const whatsappLoggedIn = localStorage.getItem('whatsappLoggedIn');
-
-    if (!instagramUser && !whatsappLoggedIn) {
+    if (!whatsappLoggedIn) {
       this.$router.push('/');
-
     }
   },
   mounted() {
@@ -116,7 +106,6 @@ export default {
         reconnection: true,
         reconnectionAttempts: 5
       });
-
       this.setupSocketListeners();
       this.getRecentChats();
     },
@@ -131,13 +120,11 @@ export default {
       });
 
       this.socket.on('recentChats', (chats) => {
-        console.log('Received chats:', chats);
         this.recentChats = chats;
         this.isLoading = false;
       });
 
       this.socket.on('chatHistory', (data) => {
-        console.log('Received chat history:', data);
         this.chatHistory = data.messages;
         this.$nextTick(() => {
           this.scrollToBottom();
@@ -146,7 +133,6 @@ export default {
 
       this.socket.on('messageSent', (result) => {
         if (result.success) {
-          // Add the sent message to chat history
           this.chatHistory.push({
             id: Date.now(),
             text: this.newMessage,
@@ -155,7 +141,7 @@ export default {
           });
           this.newMessage = '';
           this.scrollToBottom();
-          this.getRecentChats(); // Refresh chat list
+          this.getRecentChats();
         } else {
           console.error('Message send error:', result.error);
           alert('Failed to send message: ' + result.error);
@@ -174,7 +160,7 @@ export default {
           });
           this.scrollToBottom();
         }
-        this.getRecentChats(); // Refresh chat list for new message
+        this.getRecentChats();
       });
 
       this.socket.on('error', (error) => {
@@ -201,17 +187,10 @@ export default {
     sendMessage() {
       if (!this.newMessage.trim() || !this.selectedChat) return;
 
-      const messageData = {
-        platform: this.selectedChat.platform,
+      this.socket.emit('whatsapp:sendMessage', {
         userId: this.selectedChat.id,
         message: this.newMessage
-      };
-
-      if (this.selectedChat.platform === 'instagram') {
-        this.socket.emit('instagram:sendMessage', messageData);
-      } else if (this.selectedChat.platform === 'whatsapp') {
-        this.socket.emit('whatsapp:sendMessage', messageData);
-      }
+      });
     },
     scrollToBottom() {
       const container = this.$refs.messagesContainer;

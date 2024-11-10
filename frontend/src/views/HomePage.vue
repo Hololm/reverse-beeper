@@ -1,22 +1,7 @@
 <template>
   <div class="home">
-    <h1>Unified Messaging</h1>
+    <h1>WhatsApp Web Client</h1>
     <div class="login-options">
-      <!-- Instagram Login -->
-      <div class="login-section">
-        <h2>Instagram Login</h2>
-        <div v-if="!isInstagramLoggedIn">
-          <input v-model="instagramUsername" placeholder="Username" />
-          <input v-model="instagramPassword" type="password" placeholder="Password" />
-          <button @click="loginInstagram" :disabled="isLoading">
-            {{ isLoading ? 'Logging in...' : 'Login to Instagram' }}
-          </button>
-        </div>
-        <div v-else class="success-message">
-          Logged in to Instagram ✓
-        </div>
-      </div>
-
       <!-- WhatsApp Login -->
       <div class="login-section">
         <h2>WhatsApp Login</h2>
@@ -40,7 +25,7 @@
     </div>
 
     <button
-      v-if="isInstagramLoggedIn || isWhatsAppLoggedIn"
+      v-if="isWhatsAppLoggedIn"
       @click="goToChat"
       class="enter-chat-btn"
     >
@@ -58,25 +43,18 @@ export default {
   data() {
     return {
       socket: null,
-      instagramUsername: '',
-      instagramPassword: '',
       whatsappQR: null,
       isLoading: false,
       errorMessage: '',
-      isInstagramLoggedIn: false,
       isWhatsAppLoggedIn: false
     }
   },
   created() {
-  // Clear existing auth state when landing on home page
-  localStorage.removeItem('instagramUser');
-  localStorage.removeItem('whatsappLoggedIn');
-  this.isInstagramLoggedIn = false;
-  this.isWhatsAppLoggedIn = false;
-
-  this.socket = io('http://localhost:3000');
-  this.setupSocketListeners();
-},
+    localStorage.removeItem('whatsappLoggedIn');
+    this.isWhatsAppLoggedIn = false;
+    this.socket = io('http://localhost:3000');
+    this.setupSocketListeners();
+  },
   methods: {
     setupSocketListeners() {
       this.socket.on('whatsapp:qr', (qr) => {
@@ -94,29 +72,6 @@ export default {
         this.errorMessage = 'Connection error. Please try again.';
       });
     },
-    async loginInstagram() {
-      this.isLoading = true;
-      this.errorMessage = '';
-      try {
-        const response = await axios.post('http://localhost:3000/login/instagram', {
-          username: this.instagramUsername,
-          password: this.instagramPassword
-        });
-
-        if (response.data.success) {
-          this.isInstagramLoggedIn = true;
-          localStorage.setItem('instagramUser', response.data.user);
-          // Don't automatically redirect - let user click "Enter Chat"
-        } else {
-          this.errorMessage = response.data.error || 'Login failed';
-        }
-      } catch (error) {
-        console.error('Login error:', error);
-        this.errorMessage = error.response?.data?.error || 'Login failed';
-      } finally {
-        this.isLoading = false;
-      }
-    },
     async initiateWhatsAppLogin() {
       try {
         const response = await axios.get('http://localhost:3000/login/whatsapp');
@@ -129,14 +84,14 @@ export default {
       }
     },
     goToChat() {
-  if (this.isInstagramLoggedIn || this.isWhatsAppLoggedIn) {
-    this.$router.push('/chat').catch(err => {
-      if (err.name !== 'NavigationDuplicated') {
-        throw err;
+      if (this.isWhatsAppLoggedIn) {
+        this.$router.push('/chat').catch(err => {
+          if (err.name !== 'NavigationDuplicated') {
+            throw err;
+          }
+        });
       }
-    });
-  }
-}
+    }
   },
   beforeUnmount() {
     if (this.socket) {
@@ -145,84 +100,3 @@ export default {
   }
 }
 </script>
-
-<style scoped>
-.home {
-  max-width: 800px;
-  margin: 0 auto;
-  padding: 20px;
-}
-
-.login-options {
-  display: flex;
-  gap: 40px;
-  justify-content: center;
-  margin-top: 30px;
-}
-
-.login-section {
-  flex: 1;
-  max-width: 300px;
-  padding: 20px;
-  border: 1px solid #ddd;
-  border-radius: 8px;
-}
-
-input {
-  display: block;
-  width: 100%;
-  margin: 10px 0;
-  padding: 8px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-}
-
-button {
-  width: 100%;
-  padding: 10px;
-  margin-top: 10px;
-  background-color: #42b983;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-button:disabled {
-  background-color: #a8d5c2;
-}
-
-.qr-container {
-  text-align: center;
-}
-
-.qr-container img {
-  max-width: 200px;
-  margin: 10px 0;
-}
-
-.error-message {
-  color: red;
-  margin-top: 20px;
-}
-
-.success-message {
-  color: #42b983;
-  font-weight: bold;
-  text-align: center;
-  margin-top: 10px;
-}
-
-.enter-chat-btn {
-  margin-top: 30px;
-  background-color: #2c3e50;
-}
-
-button:hover {
-  opacity: 0.9;
-}
-
-button:disabled {
-  cursor: not-allowed;
-}
-</style>
