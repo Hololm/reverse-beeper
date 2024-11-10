@@ -19,45 +19,6 @@ const io = socketIO(server, {
 app.use(cors());
 app.use(express.json());
 
-async function sendInstagramMessage() {
-    const url = 'https://graph.instagram.com/v21.0/<IG_ID>/messages';
-
-    const headers = {
-        'Authorization': 'Bearer <INSTAGRAM_USER_ACCESS_TOKEN>',
-        'Content-Type': 'application/json'
-    };
-
-    const payload = {
-        recipient: {
-            id: '<IGSID>'
-        },
-        message: {
-            text: '<TEXT_OR_LINK>'
-        }
-    };
-
-    try {
-        const response = await axios.post(url, payload, { headers });
-        console.log(response.data);
-        return response.data;
-    } catch (error) {
-        console.error('Error:', error.response.status);
-        console.error('Response:', error.response.data);
-        throw error;
-    }
-}
-
-// Example route that sends the Instagram message
-app.post('/send-instagram-message', async (req, res) => {
-    try {
-        const result = await sendInstagramMessage();
-        res.json(result);
-    } catch (error) {
-        res.status(500).json({ error: 'Failed to send message' });
-    }
-});
-
-
 const waClient = new Client();
 let waLatestQR = null;
 
