@@ -48,6 +48,14 @@
           :key="message.id"
           :class="['message', { sent: message.fromMe }]"
         >
+          <div class="message-header">
+            <img
+              :src="message.avatar || 'https://ia601308.us.archive.org/8/items/whatsapp-smiling-guy-i-accidentally-made/whatsapp%20generic%20person%20light.jpg'"
+              class="avatar"
+              alt="Profile picture"
+            />
+            <span class="sender-name">{{ message.senderName }}</span>
+          </div>
           <div class="message-content">{{ message.text }}</div>
           <div class="message-time">
             {{ formatTime(message.timestamp) }}
@@ -149,14 +157,18 @@ export default {
       });
 
       this.socket.on('messageReceived', (message) => {
-        if (this.selectedChat &&
-            this.selectedChat.platform === message.platform &&
-            this.selectedChat.id === message.from) {
+        if (
+          this.selectedChat &&
+          this.selectedChat.platform === message.platform &&
+          this.selectedChat.id === message.from
+        ) {
           this.chatHistory.push({
             id: Date.now(),
             text: message.body,
             fromMe: false,
-            timestamp: message.timestamp || Date.now()
+            timestamp: message.timestamp || Date.now(),
+            senderName: message.senderName,
+            avatar: message.avatar
           });
           this.scrollToBottom();
         }
@@ -186,17 +198,18 @@ export default {
     },
     sendMessage() {
       if (!this.newMessage.trim() || !this.selectedChat) return;
-
       this.socket.emit('whatsapp:sendMessage', {
         userId: this.selectedChat.id,
         message: this.newMessage
       });
     },
     scrollToBottom() {
-      const container = this.$refs.messagesContainer;
-      if (container) {
-        container.scrollTop = container.scrollHeight;
-      }
+      this.$nextTick(() => {
+        const container = this.$refs.messagesContainer;
+        if (container) {
+          container.scrollTop = container.scrollHeight;
+        }
+      });
     },
     formatTime(timestamp) {
       return new Date(timestamp).toLocaleTimeString();
@@ -256,11 +269,6 @@ export default {
   border-radius: 4px;
   font-size: 12px;
   font-weight: bold;
-}
-
-.platform-badge.instagram {
-  background-color: #e1306c;
-  color: white;
 }
 
 .platform-badge.whatsapp {
@@ -329,8 +337,29 @@ export default {
   align-self: flex-end;
 }
 
+.message-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 5px;
+}
+
+.avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.sender-name {
+  font-size: 0.9em;
+  font-weight: bold;
+  color: #555;
+}
+
 .message-content {
   margin-bottom: 4px;
+  word-break: break-word;
 }
 
 .message-time {
@@ -381,7 +410,8 @@ export default {
   border-radius: 8px;
 }
 
-.no-chats, .no-messages {
+.no-chats,
+.no-messages {
   padding: 20px;
   text-align: center;
   color: #666;

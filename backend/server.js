@@ -49,8 +49,21 @@ io.on('connection', (socket) => {
 
   // WhatsApp message sending
   socket.on('whatsapp:sendMessage', async (data) => {
-    try {
-      const formattedNumber = data.userId.includes('@c.us') ? data.userId : `${data.userId}@c.us`;
+  try {
+    let formattedNumber;
+
+    // Check if it's a group chat
+    if (data.userId.includes('-')) {
+      // Group chat format
+      formattedNumber = data.userId.includes('@g.us')
+        ? data.userId
+        : `${data.userId}@g.us`;
+    } else {
+      // Individual chat format
+      formattedNumber = data.userId.includes('@c.us')
+        ? data.userId
+        : `${data.userId.replace(/[^0-9]/g, '')}@c.us`;
+    }
       await waClient.sendMessage(formattedNumber, data.message);
       socket.emit('messageSent', {
         platform: 'whatsapp',
@@ -89,27 +102,33 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Fetch chat history
-  socket.on('getChatHistory', async (data) => {
-    try {
-      if (data.platform === 'whatsapp') {
-        const chat = await waClient.getChatById(data.chatId);
-        const messages = await chat.fetchMessages();
-        const formattedMessages = messages.map(msg => ({
+// Fetch chat history
+socket.on('getChatHistory', async (data) => {
+  try {
+    if (data.platform === 'whatsapp') {
+      const chat = await waClient.getChatById(data.chatId);
+      const messages = await chat.fetchMessages();
+      const formattedMessages = await Promise.all(messages.map(async (msg) => {
+        const contact = await msg.getContact();
+        const profilePicUrl = await contact.getProfilePicUrl();
+        return {
           id: msg.id.id,
           text: msg.body,
           timestamp: msg.timestamp * 1000,
-          fromMe: msg.fromMe
-        }));
-        socket.emit('chatHistory', {
-          platform: 'whatsapp',
-          messages: formattedMessages
-        });
-      }
-    } catch (error) {
-      console.error('Error fetching chat history:', error);
-      socket.emit('error', { message: 'Failed to fetch chat history' });
+          fromMe: msg.fromMe,
+          senderName: contact.name || contact.pushname || contact.number,
+          avatar: profilePicUrl
+        };
+      }));
+      socket.emit('chatHistory', {
+        platform: 'whatsapp',
+        messages: formattedMessages
+      });
     }
+  } catch (error) {
+    console.error('Error fetching chat history:', error);
+    socket.emit('error', {message: 'Failed to fetch chat history'});
+  }
   });
 });
 
@@ -128,13 +147,19 @@ waClient.on('ready', () => {
   io.emit('whatsapp:ready', 'WhatsApp is ready!');
 });
 
-waClient.on('message', (message) => {
+    // WhatsApp message receiving
+waClient.on('message', async (message) => {
   if (message.fromMe) return;
+  const contact = await message.getContact();
+  const profilePicUrl = await contact.getProfilePicUrl();
+
   io.emit('messageReceived', {
     platform: 'whatsapp',
     from: message.from,
     body: message.body,
-    timestamp: message.timestamp * 1000
+    timestamp: message.timestamp * 1000,
+    senderName: contact.name || contact.pushname || contact.number,
+    avatar: profilePicUrl
   });
 });
 
