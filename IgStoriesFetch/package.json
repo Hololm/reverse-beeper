@@ -1,0 +1,10 @@
+{
+  "name": "reverse-beeper",
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "concurrently \"cd backend && node server.js\" \"cd frontend && npm run serve\""
+  },
+  "devDependencies": {
+    "tailwindcss": "^3.4.14"
+  }
+}
